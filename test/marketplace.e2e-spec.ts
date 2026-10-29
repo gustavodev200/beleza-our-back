@@ -39,6 +39,23 @@ describe('Descoberta (US6)', () => {
     expect(byNeighborhood.body.items).toHaveLength(1);
   });
 
+  it('filtra por slug da cidade; cidade sem cadastro volta vazia', async () => {
+    const tag = `Ww${Date.now()}`;
+    const fx = await businessFixture({ name: `Salão ${tag}` });
+    const { city } = await prisma.business.findUniqueOrThrow({
+      where: { id: fx.business.id },
+      select: { city: { select: { slug: true } } },
+    });
+    const inCity = await new HttpClient().get(`/businesses?q=${tag}&citySlug=${city.slug}`);
+    expect(inCity.body.items.map((b: { id: string }) => b.id)).toEqual([fx.business.id]);
+    const elsewhere = await new HttpClient().get(`/businesses?q=${tag}&citySlug=goianesia-go`);
+    expect(elsewhere.status).toBe(200);
+    expect(elsewhere.body.total).toBe(0);
+    const featured = await new HttpClient().get('/businesses/featured?citySlug=goianesia-go');
+    expect(featured.body).toEqual([]);
+    expect((await new HttpClient().get('/businesses?citySlug=Nao%20Valido')).status).toBe(400);
+  });
+
   it('perfil público por slug; inativo ou inexistente responde indisponível', async () => {
     const fx = await businessFixture();
     const profile = await new HttpClient().get(`/businesses/${fx.business.slug}`);
