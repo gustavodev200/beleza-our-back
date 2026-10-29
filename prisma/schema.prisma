@@ -1,0 +1,482 @@
+// Fonte única do modelo de dados (ver specs/001-backend-mvp/data-model.md).
+// Tabelas User/Session/Account/Verification/TwoFactor seguem o formato que o
+// Better Auth 1.6 espera (core + plugins phoneNumber, twoFactor, admin).
+// A exclusion constraint de Appointment vive em SQL na migration inicial.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CLIENT
+  BUSINESS_OWNER
+  SUPER_ADMIN
+}
+
+enum BusinessType {
+  SALON
+  BARBERSHOP
+  STUDIO
+  AUTONOMOUS
+  AESTHETICS
+}
+
+enum BusinessStatus {
+  DRAFT
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum AppointmentOrigin {
+  APP
+  COUNTER
+}
+
+enum CancelledBy {
+  CLIENT
+  OWNER
+}
+
+enum BlockReason {
+  APPOINTMENT
+  DAY_OFF
+  EXTENDED_LUNCH
+  COURSE
+}
+
+enum ReviewTag {
+  PUNCTUAL
+  ATTENTIVE
+  CLEAN_ENVIRONMENT
+  GREAT_RESULT
+  FAIR_PRICE
+}
+
+// ---------------------------------------------------------------------------
+// Autenticação (Better Auth)
+// ---------------------------------------------------------------------------
+
+model User {
+  id                  String    @id
+  name                String
+  email               String    @unique
+  emailVerified       Boolean   @default(false) @map("email_verified")
+  image               String?
+  phoneNumber         String?   @unique @map("phone_number")
+  phoneNumberVerified Boolean?  @default(false) @map("phone_number_verified")
+  role                Role      @default(CLIENT)
+  banned              Boolean?  @default(false)
+  banReason           String?   @map("ban_reason")
+  banExpires          DateTime? @map("ban_expires") @db.Timestamptz(3)
+  twoFactorEnabled    Boolean?  @default(false) @map("two_factor_enabled")
+  whatsappConsentAt   DateTime? @map("whatsapp_consent_at") @db.Timestamptz(3)
+  failedLoginCount    Int       @default(0) @map("failed_login_count")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(3)
+  anonymizedAt        DateTime? @map("anonymized_at") @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions           Session[]
+  accounts           Account[]
+  twoFactors         TwoFactor[]
+  business           Business?
+  appointments       Appointment[]
+  reviews            Review[]
+  favorites          Favorite[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Session {
+  id             String   @id
+  token          String   @unique
+  userId         String   @map("user_id")
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  impersonatedBy String?  @map("impersonated_by")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+model TwoFactor {
+  id                      String    @id
+  secret                  String
+  backupCodes             String    @map("backup_codes")
+  userId                  String    @map("user_id")
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0) @map("failed_verification_count")
+  lockedUntil             DateTime? @map("locked_until") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([secret])
+  @@index([userId])
+  @@map("two_factors")
+}
+
+// Limita envios de código por telefone e por IP (FR-001).
+model OtpSendLog {
+  id          String   @id @default(uuid())
+  phoneNumber String   @map("phone_number")
+  ip          String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([phoneNumber, createdAt])
+  @@index([ip, createdAt])
+  @@map("otp_send_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Plataforma
+// ---------------------------------------------------------------------------
+
+model City {
+  id        String   @id @default(uuid())
+  name      String
+  state     String   @db.Char(2)
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  businesses Business[]
+
+  @@map("cities")
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  icon      String
+  sortOrder Int      @default(0) @map("sort_order")
+  visible   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  businesses BusinessCategory[]
+  services   Service[]
+
+  @@map("categories")
+}
+
+model PlatformSetting {
+  id                        String   @id @default("global")
+  cancellationWindowMinutes Int      @default(120) @map("cancellation_window_minutes")
+  remindersEnabled          Boolean  @default(true) @map("reminders_enabled")
+  reviewRequestEnabled      Boolean  @default(true) @map("review_request_enabled")
+  maxActiveProfessionals    Int      @default(2) @map("max_active_professionals")
+  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("platform_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String?  @map("target_id")
+  summary    Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Estabelecimento
+// ---------------------------------------------------------------------------
+
+model Business {
+  id                   String         @id @default(uuid())
+  ownerId              String         @unique @map("owner_id")
+  cityId               String         @map("city_id")
+  type                 BusinessType
+  name                 String
+  slug                 String         @unique
+  description          String?
+  whatsapp             String
+  phone                String?
+  neighborhood         String
+  address              String?
+  latitude             Float?
+  longitude            Float?
+  coverUrl             String?        @map("cover_url")
+  logoUrl              String?        @map("logo_url")
+  status               BusinessStatus @default(DRAFT)
+  rejectionReason      String?        @map("rejection_reason")
+  submittedAt          DateTime?      @map("submitted_at") @db.Timestamptz(3)
+  approvedAt           DateTime?      @map("approved_at") @db.Timestamptz(3)
+  featured             Boolean        @default(false)
+  requiresConfirmation Boolean        @default(false) @map("requires_confirmation")
+  ratingAvg            Decimal        @default(0) @map("rating_avg") @db.Decimal(3, 2)
+  ratingCount          Int            @default(0) @map("rating_count")
+  minPriceCents        Int?           @map("min_price_cents")
+  searchText           String         @default("") @map("search_text")
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  owner         User               @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  city          City               @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  categories    BusinessCategory[]
+  hours         BusinessHours[]
+  services      Service[]
+  professionals Professional[]
+  appointments  Appointment[]
+  blocks        TimeBlock[]
+  reviews       Review[]
+  favorites     Favorite[]
+
+  @@index([status, cityId])
+  @@index([featured])
+  @@index([cityId])
+  @@map("businesses")
+}
+
+model BusinessCategory {
+  businessId String @map("business_id")
+  categoryId String @map("category_id")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([businessId, categoryId])
+  @@index([categoryId])
+  @@map("business_categories")
+}
+
+model BusinessHours {
+  id         String @id @default(uuid())
+  businessId String @map("business_id")
+  weekday    Int // 0 = domingo ... 6 = sábado
+  opensAt    Int    @map("opens_at") // minutos desde 00:00
+  closesAt   Int    @map("closes_at")
+  breakStart Int?   @map("break_start")
+  breakEnd   Int?   @map("break_end")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, weekday])
+  @@map("business_hours")
+}
+
+model Service {
+  id              String   @id @default(uuid())
+  businessId      String   @map("business_id")
+  categoryId      String   @map("category_id")
+  name            String
+  durationMinutes Int      @map("duration_minutes")
+  priceCents      Int      @map("price_cents")
+  visible         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category      Category              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  professionals ProfessionalService[]
+  appointments  Appointment[]
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@map("services")
+}
+
+model Professional {
+  id         String   @id @default(uuid())
+  businessId String   @map("business_id")
+  name       String
+  role       String?
+  photoUrl   String?  @map("photo_url")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services     ProfessionalService[]
+  appointments Appointment[]
+  blocks       TimeBlock[]
+
+  @@index([businessId])
+  @@map("professionals")
+}
+
+model ProfessionalService {
+  professionalId String @map("professional_id")
+  serviceId      String @map("service_id")
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([professionalId, serviceId])
+  @@index([serviceId])
+  @@map("professional_services")
+}
+
+// ---------------------------------------------------------------------------
+// Agenda
+// ---------------------------------------------------------------------------
+
+model Appointment {
+  id                 String            @id @default(uuid())
+  businessId         String            @map("business_id")
+  clientId           String            @map("client_id")
+  professionalId     String            @map("professional_id")
+  serviceId          String            @map("service_id")
+  startsAt           DateTime          @map("starts_at") @db.Timestamptz(3)
+  endsAt             DateTime          @map("ends_at") @db.Timestamptz(3)
+  priceCents         Int               @map("price_cents")
+  durationMinutes    Int               @map("duration_minutes")
+  serviceName        String            @map("service_name")
+  status             AppointmentStatus
+  origin             AppointmentOrigin
+  notes              String?
+  cancelledBy        CancelledBy?      @map("cancelled_by")
+  completedAt        DateTime?         @map("completed_at") @db.Timestamptz(3)
+  isNewForOwner      Boolean           @default(false) @map("is_new_for_owner")
+  reminder24hSentAt  DateTime?         @map("reminder_24h_sent_at") @db.Timestamptz(3)
+  reminder2hSentAt   DateTime?         @map("reminder_2h_sent_at") @db.Timestamptz(3)
+  reviewInviteSentAt DateTime?         @map("review_invite_sent_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  client       User         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  review       Review?
+
+  @@index([businessId, startsAt])
+  @@index([clientId, startsAt])
+  @@index([professionalId, startsAt])
+  @@index([status, startsAt])
+  @@map("appointments")
+}
+
+model TimeBlock {
+  id             String      @id @default(uuid())
+  businessId     String      @map("business_id")
+  professionalId String      @map("professional_id")
+  startsAt       DateTime    @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime    @map("ends_at") @db.Timestamptz(3)
+  reason         BlockReason
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, startsAt])
+  @@index([professionalId, startsAt])
+  @@map("time_blocks")
+}
+
+// ---------------------------------------------------------------------------
+// Reputação e engajamento
+// ---------------------------------------------------------------------------
+
+model Review {
+  id            String      @id @default(uuid())
+  appointmentId String      @unique @map("appointment_id")
+  businessId    String      @map("business_id")
+  clientId      String      @map("client_id")
+  rating        Int
+  tags          ReviewTag[]
+  comment       String?
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client      User        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt(sort: Desc)])
+  @@map("reviews")
+}
+
+model Favorite {
+  clientId   String   @map("client_id")
+  businessId String   @map("business_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  client   User     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, businessId])
+  @@index([businessId])
+  @@map("favorites")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  type      String
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@map("notifications")
+}

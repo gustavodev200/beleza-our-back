@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Prisma generated client
+/generated/
+
+# Environment / secrets
+# Glob instead of literals: a stray .env.bak / .env.prod / .env.local is exactly
+# how a secrets file reaches a public repo. Only placeholders are versioned.
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
+
+# Tests / coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Local uploads / temp files
+uploads/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / local agent settings
+.vscode/
+.idea/
+.claude/settings.local.json

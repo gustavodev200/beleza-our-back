@@ -1,0 +1,14 @@
+{
+  "$schema": "./project.config.schema.json",
+  "project": "belezaour-backend",
+  "preset": "prisma-postgres",
+
+  "frontend": "nextjs",
+  "backend": "nestjs",
+  "database": "prisma-postgres",
+  "auth": "better-auth",
+  "email": "resend",
+  "storage": "cloudinary",
+
+  "notes": "Backend do belezaOur. Frontend vive em ../beleza-our-front. Produto: docs/mvp-spec.md. MVP só com plano Free — sem gateway de pagamento."
+}

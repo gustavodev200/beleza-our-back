@@ -1,5 +1,30 @@
 # CLAUDE.md — Workspace de Desenvolvimento com Agentes de IA
 
+## Projeto: belezaOur — Backend
+
+Este diretório é o **backend do belezaOur**, marketplace de agendamento de
+serviços de beleza (lançamento em Goiânia-GO). O frontend vive em
+`../beleza-our-front`.
+
+**Fonte de verdade do produto:** [docs/mvp-spec.md](docs/mvp-spec.md) — roles
+(`CLIENT`, `BUSINESS_OWNER`, `SUPER_ADMIN`), autenticação, features por role,
+regras de negócio, notificações e fora do escopo. Leia antes de qualquer
+`/speckit-specify`, `/speckit-plan` ou implementação.
+
+Pontos críticos para o backend:
+
+- Disponibilidade (§7.1) e concorrência de reserva garantida no banco (§7.2).
+- Isolamento por `business_id` em toda rota do painel; auditoria das ações do
+  `SUPER_ADMIN` (§2).
+- Auth: OTP por WhatsApp (cliente), e-mail+senha (dono), 2FA (admin); tokens e
+  rate limits em §3.
+- Máquinas de status de agendamento (§7.3) e estabelecimento (§7.4); preço
+  congelado na reserva (§7.6); fuso `America/Sao_Paulo`.
+
+Como este é um projeto concreto, o princípio 5 abaixo ("sem funcionalidade de
+negócio") vale só para mudanças no template em si, não para o código do
+belezaOur.
+
 Este repositório é um **workspace/template pessoal**. Ele não é uma aplicação
 de negócio: não contém funcionalidades de produto, apenas estrutura,
 configuração, skills, comandos, templates e regras reutilizáveis para iniciar
@@ -72,8 +97,9 @@ Specification → Clarification → Plan → Tasks → Implementation → Tests 
 
 As primeiras 5 fases usam o motor oficial do spec-kit (skills `speckit-*`,
 instaladas via `specify` CLI); `/test`, `/security` e `/review` são
-comandos próprios deste workspace. Veja a seção "SpecKit" do
-[README.md](README.md) para o guia completo de uso.
+comandos próprios deste workspace. Veja a seção "SpecKit" de
+[docs/workspace-template.md](docs/workspace-template.md) para o guia completo de uso
+(README original do template; o [README.md](README.md) agora descreve o backend).
 
 ## Princípios gerais para o agente
 
@@ -105,8 +131,8 @@ precisam ser editados são:
 - `project.config.json` (criado a partir do exemplo do preset escolhido)
 - `.specify/memory/constitution.md` (rode `/speckit-constitution` para
   anexar princípios específicos do projeto, sem apagar os herdados)
-- README do projeto (este README.md descreve o workspace-template, não o
-  produto final)
+- README do projeto (no belezaOur, o README.md já descreve o backend; o do
+  template foi movido para `docs/workspace-template.md`)
 
 Tudo em `.claude/skills/`, `.claude/commands/` e `.specify/templates/` é
 reutilizado sem alteração entre projetos, salvo necessidade de nova stack
