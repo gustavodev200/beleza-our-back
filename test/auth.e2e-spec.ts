@@ -8,6 +8,7 @@ import {
   readOutbox,
   signUpOwner,
   uniqueEmail,
+  uniqueCpf,
   uniquePhone,
   verifyEmailOf,
 } from './helpers';
@@ -23,10 +24,67 @@ describe('Auth do dono (e-mail e senha)', () => {
       email,
       password: 'senha-forte-123',
       role: 'SUPER_ADMIN',
+      cpfCnpj: uniqueCpf(),
+      acceptedTerms: true,
     });
     const user = await prisma.user.findUnique({ where: { email } });
     // Better Auth recusa o campo (input:false) ou ignora; em nenhum caso vira admin.
     if (user) expect(user.role).toBe('BUSINESS_OWNER');
+  });
+
+  it('cadastro grava CPF só com dígitos e o aceite dos termos', async () => {
+    const http = new HttpClient();
+    const email = uniqueEmail();
+    const cpf = uniqueCpf();
+    const masked = `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`;
+    const res = await http.post('/auth/sign-up/email', {
+      name: 'Dona Teste',
+      email,
+      password: 'senha-forte-123',
+      cpfCnpj: masked,
+      acceptedTerms: true,
+    });
+    expect(res.status).toBe(200);
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user?.cpfCnpj).toBe(cpf);
+    expect(user?.termsAcceptedAt).toBeInstanceOf(Date);
+    expect(user?.termsVersion).toBeTruthy();
+  });
+
+  it('recusa cadastro sem aceite, com documento inválido ou repetido', async () => {
+    const http = new HttpClient();
+    const base = { name: 'Dona Teste', password: 'senha-forte-123' };
+    const cpf = uniqueCpf();
+
+    const noTerms = await http.post('/auth/sign-up/email', {
+      ...base,
+      email: uniqueEmail(),
+      cpfCnpj: cpf,
+    });
+    expect(noTerms.status).toBe(400);
+
+    const badDoc = await http.post('/auth/sign-up/email', {
+      ...base,
+      email: uniqueEmail(),
+      cpfCnpj: '111.111.111-11',
+      acceptedTerms: true,
+    });
+    expect(badDoc.status).toBe(400);
+
+    const first = await http.post('/auth/sign-up/email', {
+      ...base,
+      email: uniqueEmail(),
+      cpfCnpj: cpf,
+      acceptedTerms: true,
+    });
+    expect(first.status).toBe(200);
+    const dup = await http.post('/auth/sign-up/email', {
+      ...base,
+      email: uniqueEmail(),
+      cpfCnpj: cpf,
+      acceptedTerms: true,
+    });
+    expect(dup.status).toBe(422);
   });
 
   it('exige e-mail verificado antes de entrar', async () => {

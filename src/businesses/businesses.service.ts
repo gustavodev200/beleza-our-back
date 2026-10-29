@@ -18,9 +18,11 @@ const RESERVED_SLUGS = new Set([
   'my-schedule',
   'notifications',
   'offline',
+  'privacidade',
   'profile',
   'sign-in',
   'sign-up',
+  'termos',
   'welcome',
 ]);
 import { PrismaService } from '../prisma/prisma.service';

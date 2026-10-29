@@ -171,9 +171,27 @@ export function totp(secretBase32: string, now = Date.now()): string {
 
 // --- Sessões prontas ----------------------------------------------------------
 
+/** CPF com dígitos verificadores válidos e único por chamada. */
+export function uniqueCpf(): string {
+  const base = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  const digit = (nums: number[]) => {
+    const rest = nums.reduce((a, n, i) => a + n * (nums.length + 1 - i), 0) % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  const d1 = digit(base);
+  const d2 = digit([...base, d1]);
+  return [...base, d1, d2].join('');
+}
+
 export async function signUpOwner(email = uniqueEmail(), password = 'senha-forte-123') {
   const http = new HttpClient();
-  const res = await http.post('/auth/sign-up/email', { name: 'Dona Teste', email, password });
+  const res = await http.post('/auth/sign-up/email', {
+    name: 'Dona Teste',
+    email,
+    password,
+    cpfCnpj: uniqueCpf(),
+    acceptedTerms: true,
+  });
   if (res.status !== 200)
     throw new Error(`sign-up falhou: ${res.status} ${JSON.stringify(res.body)}`);
   return { http, email, password };

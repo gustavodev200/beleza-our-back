@@ -6,6 +6,7 @@ import { phoneNumber, twoFactor } from 'better-auth/plugins';
 import { allowedOrigins, type Env } from '../config/env';
 import { emailLayout, escapeHtml, type EmailService } from '../integrations/email/email.service';
 import type { WhatsappService } from '../integrations/whatsapp/whatsapp.service';
+import { normalizeCpfCnpj } from '../common/utils/document';
 import { BR_MOBILE_REGEX } from '../common/utils/phone';
 
 /**
@@ -28,6 +29,9 @@ export const OTP_RESEND_COOLDOWN_MS = 30_000;
  */
 export const OTP_DAILY_MAX = 8;
 export const OTP_DAILY_WINDOW_MS = 24 * 60 * 60_000;
+
+/** Versão vigente dos Termos de Uso e da Política de Privacidade; gravada no aceite. */
+export const TERMS_VERSION = '2026-10-29';
 
 /** E-mail interno exigido pelo plugin de telefone; nunca exibido nem usado para envio. */
 export const PHONE_EMAIL_DOMAIN = 'phone.belezaour.local';
@@ -66,6 +70,11 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
         // input:false — o cliente nunca define o próprio papel nem o bloqueio (FR-006).
         role: { type: 'string', required: false, input: false, defaultValue: 'CLIENT' },
         banned: { type: 'boolean', required: false, input: false, defaultValue: false },
+        // Obrigatório no cadastro do dono (checado no hook); exigido pelo Asaas.
+        cpfCnpj: { type: 'string', required: false, input: true },
+        // Gravados pelo servidor a partir do aceite; o cliente não define.
+        termsAcceptedAt: { type: 'date', required: false, input: false },
+        termsVersion: { type: 'string', required: false, input: false },
       },
     },
 
@@ -154,14 +163,23 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
       user: {
         create: {
           // Papel decidido pelo fluxo, nunca pelo corpo da requisição (FR-006).
-          before: (user, ctx) =>
-            Promise.resolve({
+          before: (user, ctx) => {
+            const isOwnerSignUp = ctx?.path === '/sign-up/email';
+            return Promise.resolve({
               data: {
                 ...user,
-                role: ctx?.path === '/sign-up/email' ? 'BUSINESS_OWNER' : 'CLIENT',
+                role: isOwnerSignUp ? 'BUSINESS_OWNER' : 'CLIENT',
                 banned: false,
+                ...(isOwnerSignUp
+                  ? {
+                      cpfCnpj: normalizeCpfCnpj(bodyText(ctx.body, 'cpfCnpj')),
+                      termsAcceptedAt: new Date(),
+                      termsVersion: TERMS_VERSION,
+                    }
+                  : { cpfCnpj: null, termsAcceptedAt: null, termsVersion: null }),
               },
-            }),
+            });
+          },
         },
       },
       session: {
@@ -182,6 +200,26 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
 
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === '/sign-up/email') {
+          const document = normalizeCpfCnpj(bodyText(ctx.body, 'cpfCnpj'));
+          if (!document) throw new APIError('BAD_REQUEST', { message: 'CPF ou CNPJ inválido' });
+          const body = ctx.body as Record<string, unknown> | undefined;
+          if (body?.acceptedTerms !== true) {
+            throw new APIError('BAD_REQUEST', {
+              message: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
+            });
+          }
+          const taken = await prisma.user.findUnique({
+            where: { cpfCnpj: document },
+            select: { id: true },
+          });
+          if (taken) {
+            throw new APIError('UNPROCESSABLE_ENTITY', {
+              message: 'Já existe uma conta com este CPF ou CNPJ',
+            });
+          }
+        }
+
         if (ctx.path === '/sign-in/email') {
           const emailInput = bodyText(ctx.body, 'email').toLowerCase();
           const user = await prisma.user.findUnique({
