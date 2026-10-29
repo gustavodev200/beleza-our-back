@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators';
 import { loadEnv } from '../config/env';
 import { AvailabilityQuery } from '../appointments/appointment.schemas';
-import { ReviewsQueryDto, SearchQueryDto } from './marketplace.schemas';
+import { FeaturedQueryDto, ReviewsQueryDto, SearchQueryDto } from './marketplace.schemas';
 import { MarketplaceService } from './marketplace.service';
 
 @ApiTags('Marketplace (público)')
@@ -20,8 +20,8 @@ export class MarketplaceController {
   }
 
   @Get('featured')
-  featured() {
-    return this.marketplace.featured();
+  featured(@Query() query: FeaturedQueryDto) {
+    return this.marketplace.featured(query.cityId, query.citySlug);
   }
 
   @Get(':slug')

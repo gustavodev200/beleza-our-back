@@ -121,7 +121,7 @@ export class NotificationsService {
         body,
         data: { appointmentId: a.id },
       });
-      await this.whatsappToClient(a, `belezaOur: ${body} ${this.frontendUrl}/agendamentos`);
+      await this.whatsappToClient(a, `belezaOur: ${body} ${this.frontendUrl}/appointments`);
     });
   }
 
@@ -156,7 +156,7 @@ export class NotificationsService {
           [`Olá, ${escapeHtml(b.owner.name)}.`, escapeHtml(body)],
           approved
             ? { label: 'Ver meu perfil público', url: `${this.frontendUrl}/${b.slug}` }
-            : { label: 'Revisar cadastro', url: `${this.frontendUrl}/painel` },
+            : { label: 'Revisar cadastro', url: `${this.frontendUrl}/dashboard` },
         ),
       });
       await this.whatsapp.send({ to: b.whatsapp, text: `belezaOur: ${body}` });

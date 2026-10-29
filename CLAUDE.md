@@ -20,6 +20,12 @@ Pontos críticos para o backend:
   rate limits em §3.
 - Máquinas de status de agendamento (§7.3) e estabelecimento (§7.4); preço
   congelado na reserva (§7.6); fuso `America/Sao_Paulo`.
+- **Padrão de nomes:** rotas da API, query params, pastas e arquivos sempre em
+  inglês (`/owner/appointments`, `?cityId=`); pt-BR só no que o usuário lê
+  (mensagens de erro, e-mails, WhatsApp). Links para o frontend também usam as
+  rotas em inglês (`/appointments`, `/dashboard`, `/dashboard/sign-in`).
+  `RESERVED_SLUGS` em `businesses.service.ts` deve listar toda rota estática da
+  raiz do frontend.
 
 Como este é um projeto concreto, o princípio 5 abaixo ("sem funcionalidade de
 negócio") vale só para mudanças no template em si, não para o código do

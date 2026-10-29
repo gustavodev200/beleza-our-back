@@ -47,6 +47,12 @@ export function distanceKm(lat1: number, lng1: number, lat2: number, lng2: numbe
 /** Somente ACTIVE em cidade ativa existe para o público (FR-040). */
 const PUBLIC_WHERE: Prisma.BusinessWhereInput = { status: 'ACTIVE', city: { active: true } };
 
+const cityWhere = (cityId?: string, citySlug?: string): Prisma.BusinessWhereInput => ({
+  ...PUBLIC_WHERE,
+  cityId,
+  city: { active: true, slug: citySlug },
+});
+
 @Injectable()
 export class MarketplaceService {
   constructor(
@@ -79,8 +85,7 @@ export class MarketplaceService {
     }
     const words = q.q ? normalizeText(q.q).split(' ').filter(Boolean).slice(0, 6) : [];
     const where: Prisma.BusinessWhereInput = {
-      ...PUBLIC_WHERE,
-      cityId: q.cityId,
+      ...cityWhere(q.cityId, q.citySlug),
       ...(q.categoryId
         ? { categories: { some: { categoryId: q.categoryId, category: { visible: true } } } }
         : {}),
@@ -128,9 +133,9 @@ export class MarketplaceService {
   }
 
   /** "Em destaque" controlado pelo admin, com próximos 3 horários (FR-043). */
-  async featured() {
+  async featured(cityId?: string, citySlug?: string) {
     const rows = await this.prisma.business.findMany({
-      where: { ...PUBLIC_WHERE, featured: true },
+      where: { ...cityWhere(cityId, citySlug), featured: true },
       select: cardSelect,
       orderBy: [{ ratingAvg: 'desc' }, { name: 'asc' }],
       take: 10,

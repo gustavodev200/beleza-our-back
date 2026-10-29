@@ -2,6 +2,27 @@ import { Injectable } from '@nestjs/common';
 import type { Business, Prisma } from '@prisma/client';
 import { Errors } from '../common/errors';
 import { normalizeText, slugify } from '../common/utils/text';
+
+/**
+ * O perfil público vive em `/{slug}` no frontend: um slug igual a uma rota
+ * estática (sempre em inglês) deixaria o perfil inalcançável.
+ */
+const RESERVED_SLUGS = new Set([
+  'admin',
+  'api',
+  'appointments',
+  'dashboard',
+  'explore',
+  'favorites',
+  'locations',
+  'my-schedule',
+  'notifications',
+  'offline',
+  'profile',
+  'sign-in',
+  'sign-up',
+  'welcome',
+]);
 import { PrismaService } from '../prisma/prisma.service';
 import {
   toMinutes,
@@ -214,6 +235,7 @@ export class BusinessesService {
     const base = slugify(name) || 'estabelecimento';
     for (let attempt = 0; attempt < 50; attempt += 1) {
       const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
+      if (RESERVED_SLUGS.has(candidate)) continue;
       const taken = await this.prisma.business.findUnique({
         where: { slug: candidate },
         select: { id: true },
