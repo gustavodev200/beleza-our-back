@@ -29,17 +29,27 @@ export const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
-    // Intervalo do agendador de lembretes (5 min em produção; curto nos testes).
-    SCHEDULER_INTERVAL_MS: z.coerce
-      .number()
-      .int()
-      .min(500)
-      .default(5 * 60_000),
+    // Web Push (PWA). Gere o par com: npx web-push generate-vapid-keys
+    VAPID_PUBLIC_KEY: z.string().optional().default(''),
+    VAPID_PRIVATE_KEY: z.string().optional().default(''),
+    VAPID_SUBJECT: z.string().default('mailto:suporte@belezaour.app'),
+    // Segredo do cron externo (POST /api/internal/cron/tick). Vazio = rota desligada.
+    CRON_SECRET: z.string().optional().default(''),
+    // Intervalo do agendador interno (1 min: lembrete de 15 min e "na hora" precisam
+    // de precisão; curto nos testes). O cron externo chama o mesmo tick.
+    SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(500).default(60_000),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;
     // Integrações ausentes não impedem o boot (ambiente de teste sem chaves);
     // main.ts avisa no log. Ver missingIntegrations.
+    if (env.CRON_SECRET && env.CRON_SECRET.length < 32) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CRON_SECRET'],
+        message: 'CRON_SECRET precisa de ao menos 32 caracteres',
+      });
+    }
     if (env.SWAGGER_ENABLED) {
       ctx.addIssue({
         code: 'custom',
@@ -66,9 +76,20 @@ export function loadEnv(): Env {
   return cached;
 }
 
-/** Integrações sem chave: e-mails só vão para o log e uploads usam URL fictícia. */
+/**
+ * Integrações sem chave: e-mails só vão para o log, uploads usam URL fictícia,
+ * push não sai e o cron externo fica desligado (só o agendador interno roda).
+ */
 export function missingIntegrations(env: Env): string[] {
-  return (['RESEND_API_KEY', 'CLOUDINARY_URL'] as const).filter((key) => !env[key]);
+  return (
+    [
+      'RESEND_API_KEY',
+      'CLOUDINARY_URL',
+      'VAPID_PUBLIC_KEY',
+      'VAPID_PRIVATE_KEY',
+      'CRON_SECRET',
+    ] as const
+  ).filter((key) => !env[key]);
 }
 
 /** Origens permitidas para CORS e Better Auth (sempre inclui o front). */

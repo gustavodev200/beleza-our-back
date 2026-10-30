@@ -101,6 +101,7 @@ model User {
   reviews            Review[]
   favorites          Favorite[]
   notifications      Notification[]
+  pushSubscriptions  PushSubscription[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -399,6 +400,8 @@ model Appointment {
   isNewForOwner      Boolean           @default(false) @map("is_new_for_owner")
   reminder24hSentAt  DateTime?         @map("reminder_24h_sent_at") @db.Timestamptz(3)
   reminder2hSentAt   DateTime?         @map("reminder_2h_sent_at") @db.Timestamptz(3)
+  reminder15mSentAt  DateTime?         @map("reminder_15m_sent_at") @db.Timestamptz(3)
+  startNoticeSentAt  DateTime?         @map("start_notice_sent_at") @db.Timestamptz(3)
   reviewInviteSentAt DateTime?         @map("review_invite_sent_at") @db.Timestamptz(3)
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -482,4 +485,21 @@ model Notification {
 
   @@index([userId, readAt, createdAt(sort: Desc)])
   @@map("notifications")
+}
+
+/// Inscrição Web Push de um aparelho (PWA). O endpoint é único por navegador.
+model PushSubscription {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

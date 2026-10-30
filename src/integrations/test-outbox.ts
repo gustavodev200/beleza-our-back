@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
  * testes e2e (processo separado) leem para obter códigos e links. Nenhuma rota
  * HTTP expõe isso.
  */
-export function appendTestOutbox(channel: 'email' | 'whatsapp', payload: object): void {
+export function appendTestOutbox(channel: 'email' | 'whatsapp' | 'push', payload: object): void {
   const file = process.env.TEST_OUTBOX_FILE ?? 'tmp/test-outbox.jsonl';
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(

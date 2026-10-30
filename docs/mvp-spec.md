@@ -291,8 +291,11 @@ O valor do agendamento é registrado no momento da reserva; mudanças futuras de
 | Confirmado / concluído / cancelado / não compareceu pelo dono | ✔ | — | WhatsApp + in-app |
 | Cancelamento ou remarcação pela cliente | — | ✔ | in-app |
 | Lembrete 24h e 2h antes | ✔ | — | WhatsApp (se ativo) |
+| Lembrete 15 min antes e na hora do atendimento | ✔ | ✔ | E-mail + push (PWA) + in-app (se ativo) |
 | Convite para avaliar (2h após concluir) | ✔ | — | WhatsApp + in-app (se ativo) |
 | Cadastro aprovado ou recusado | — | ✔ | WhatsApp + e-mail |
+
+Toda notificação in-app também sai como push nos aparelhos em que o usuário ativou as notificações (Web Push/VAPID). E-mail só vai para endereço verificado. O agendador roda a cada minuto na API e também por um cron externo (`POST /api/internal/cron/tick`, protegido por `CRON_SECRET`), que acorda a instância na hospedagem gratuita.
 
 ---
 

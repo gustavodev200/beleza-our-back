@@ -1,0 +1,36 @@
+# Mantém a API acordada no Render free (dorme após 15 min sem tráfego) e
+# dispara o agendador de lembretes. A precisão de 1 min vem do agendador
+# interno da API; este workflow só garante que o processo esteja de pé.
+# Agendamentos do GitHub atrasam às vezes: para lembretes pontuais, use também
+# um cron de 1 min (cron-job.org) — ver docs/notifications-cron.md.
+name: cron-tick
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cron-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      API_URL: ${{ vars.API_URL || 'https://beleza-our-back.onrender.com' }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Acorda a API e roda o tick
+        run: |
+          # Primeira chamada pode levar ~1 min (instância acordando).
+          if [ -n "$CRON_SECRET" ]; then
+            curl -fsS --retry 3 --retry-all-errors --max-time 90 \
+              -X POST -H "Authorization: Bearer $CRON_SECRET" \
+              "$API_URL/api/internal/cron/tick"
+          else
+            curl -fsS --retry 3 --retry-all-errors --max-time 90 "$API_URL/api/health"
+          fi

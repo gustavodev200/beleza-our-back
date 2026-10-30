@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   if (env.NODE_ENV === 'production') {
     for (const key of missingIntegrations(env)) {
-      logger.warn(`${key} vazio: integração desligada (e-mail só em log / upload fictício)`);
+      logger.warn(`${key} vazio: integração desligada`);
     }
   }
 

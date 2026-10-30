@@ -84,8 +84,11 @@ export class HttpClient {
 }
 
 interface OutboxEntry {
-  channel: 'email' | 'whatsapp';
+  channel: 'email' | 'whatsapp' | 'push';
   to: string;
+  userId?: string;
+  title?: string;
+  url?: string;
   subject?: string;
   html?: string;
   text?: string;

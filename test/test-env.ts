@@ -9,6 +9,7 @@ export const TEST_DATABASE_URL =
   'postgresql://belezaour:belezaour@localhost:5433/belezaour_test?schema=public';
 export const ADMIN_EMAIL = 'admin@test.belezaour.local';
 export const ADMIN_PASSWORD = 'Admin-Test-Password-123';
+export const CRON_SECRET = 'test-only-cron-secret-belezaour-00000000';
 
 export function serverEnv(): NodeJS.ProcessEnv {
   return {
@@ -30,5 +31,6 @@ export function serverEnv(): NodeJS.ProcessEnv {
     TRUST_PROXY_HOPS: '0',
     TEST_OUTBOX_FILE: OUTBOX_FILE,
     SCHEDULER_INTERVAL_MS: '1000',
+    CRON_SECRET,
   };
 }

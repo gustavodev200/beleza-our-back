@@ -2,15 +2,28 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TZDate } from '@date-fns/tz';
 import { format } from 'date-fns';
 import type { AppointmentStatus, Prisma } from '@prisma/client';
+import { PHONE_EMAIL_DOMAIN } from '../auth/better-auth';
 import { loadEnv } from '../config/env';
 import { TIMEZONE } from '../common/utils/time';
 import { emailLayout, escapeHtml, EmailService } from '../integrations/email/email.service';
+import { PushService } from '../integrations/push/push.service';
 import { WhatsappService } from '../integrations/whatsapp/whatsapp.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+const contact = { id: true, name: true, email: true, emailVerified: true } as const;
+
 const appointmentInclude = {
-  business: { select: { id: true, name: true, ownerId: true, address: true, neighborhood: true } },
-  client: { select: { id: true, name: true, phoneNumber: true, whatsappConsentAt: true } },
+  business: {
+    select: {
+      id: true,
+      name: true,
+      ownerId: true,
+      address: true,
+      neighborhood: true,
+      owner: { select: contact },
+    },
+  },
+  client: { select: { ...contact, phoneNumber: true, whatsappConsentAt: true } },
   professional: { select: { name: true } },
 } satisfies Prisma.AppointmentInclude;
 
@@ -20,6 +33,18 @@ export function formatWhen(instant: Date): string {
   return format(new TZDate(instant, TIMEZONE), "dd/MM 'às' HH:mm");
 }
 
+function formatTime(instant: Date): string {
+  return format(new TZDate(instant, TIMEZONE), 'HH:mm');
+}
+
+/** Lembrete curto: 15 min antes (`SOON`) e no horário marcado (`NOW`). */
+export type UpcomingStage = 'SOON' | 'NOW';
+
+// Rotas do front abertas ao tocar no push.
+const CLIENT_URL = '/appointments';
+const OWNER_URL = '/dashboard';
+const OWNER_SCHEDULE_URL = '/dashboard/schedule';
+
 const STATUS_TEXT: Partial<Record<AppointmentStatus, { title: string; verb: string }>> = {
   CONFIRMED: { title: 'Agendamento confirmado', verb: 'foi confirmado' },
   COMPLETED: { title: 'Atendimento concluído', verb: 'foi concluído' },
@@ -28,8 +53,9 @@ const STATUS_TEXT: Partial<Record<AppointmentStatus, { title: string; verb: stri
 };
 
 /**
- * Notificações in-app + WhatsApp + e-mail. Sempre chamado **depois** do commit
- * e nunca lança: falha aqui não desfaz nem repete a operação (Princípio XI).
+ * Notificações in-app (+ push no aparelho) + WhatsApp + e-mail. Sempre chamado
+ * **depois** do commit e nunca lança: falha aqui não desfaz nem repete a
+ * operação (Princípio XI).
  */
 @Injectable()
 export class NotificationsService {
@@ -40,6 +66,7 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly whatsapp: WhatsappService,
     private readonly email: EmailService,
+    private readonly push: PushService,
   ) {}
 
   async appointmentCreated(appointmentId: string): Promise<void> {
@@ -52,6 +79,7 @@ export class NotificationsService {
         title: pending ? 'Agendamento solicitado' : 'Horário confirmado!',
         body: `${a.serviceName} em ${a.business.name}, ${when} com ${a.professional.name}.`,
         data: { appointmentId: a.id },
+        url: CLIENT_URL,
       });
       await this.whatsappToClient(
         a,
@@ -65,6 +93,7 @@ export class NotificationsService {
           title: pending ? 'Novo agendamento aguardando confirmação' : 'Novo agendamento',
           body: `${a.client.name} · ${a.serviceName} · ${when} · ${a.professional.name}`,
           data: { appointmentId: a.id },
+          url: OWNER_URL,
         });
       }
     });
@@ -81,6 +110,7 @@ export class NotificationsService {
         title: text.title,
         body: message,
         data: { appointmentId: a.id },
+        url: CLIENT_URL,
       });
       await this.whatsappToClient(a, `belezaOur: ${message}`);
     });
@@ -97,6 +127,7 @@ export class NotificationsService {
         title: change === 'CANCELED' ? 'Cliente cancelou' : 'Cliente remarcou',
         body: `${a.client.name} · ${a.serviceName} · ${formatWhen(a.startsAt)} · ${a.professional.name}`,
         data: { appointmentId: a.id },
+        url: OWNER_URL,
       });
     });
   }
@@ -111,6 +142,48 @@ export class NotificationsService {
     });
   }
 
+  /** Lembrete 15 min antes e na hora: cliente e dono, in-app + push + e-mail. */
+  async upcoming(appointmentId: string, stage: UpcomingStage): Promise<void> {
+    await this.safely(`upcoming:${stage}`, async () => {
+      const a = await this.load(appointmentId);
+      const time = formatTime(a.startsAt);
+      const soon = stage === 'SOON';
+      const place = [a.business.address, a.business.neighborhood].filter(Boolean).join(' · ');
+
+      const clientTitle = soon
+        ? 'Seu horário é daqui a 15 minutos'
+        : 'Chegou a hora do seu atendimento';
+      const clientBody = `${a.serviceName} em ${a.business.name}, às ${time} com ${a.professional.name}.`;
+      await this.inApp(a.clientId, {
+        type: soon ? 'APPOINTMENT_REMINDER_15M' : 'APPOINTMENT_REMINDER_NOW',
+        title: clientTitle,
+        body: clientBody,
+        data: { appointmentId: a.id },
+        url: CLIENT_URL,
+      });
+      await this.emailTo(
+        a.client,
+        clientTitle,
+        place ? [clientBody, `Endereço: ${place}`] : [clientBody],
+        { label: 'Ver meu agendamento', url: `${this.frontendUrl}${CLIENT_URL}` },
+      );
+
+      const ownerTitle = soon ? 'Atendimento em 15 minutos' : 'Atendimento começando agora';
+      const ownerBody = `${a.client.name} · ${a.serviceName} · ${time} · ${a.professional.name}`;
+      await this.inApp(a.business.ownerId, {
+        type: soon ? 'OWNER_REMINDER_15M' : 'OWNER_REMINDER_NOW',
+        title: ownerTitle,
+        body: ownerBody,
+        data: { appointmentId: a.id },
+        url: OWNER_SCHEDULE_URL,
+      });
+      await this.emailTo(a.business.owner, ownerTitle, [ownerBody], {
+        label: 'Abrir agenda',
+        url: `${this.frontendUrl}${OWNER_SCHEDULE_URL}`,
+      });
+    });
+  }
+
   async reviewInvite(appointmentId: string): Promise<void> {
     await this.safely('reviewInvite', async () => {
       const a = await this.load(appointmentId);
@@ -120,6 +193,7 @@ export class NotificationsService {
         title: 'Avalie seu atendimento',
         body,
         data: { appointmentId: a.id },
+        url: CLIENT_URL,
       });
       await this.whatsappToClient(a, `belezaOur: ${body} ${this.frontendUrl}/appointments`);
     });
@@ -147,6 +221,7 @@ export class NotificationsService {
         title,
         body,
         data: { businessId },
+        url: OWNER_URL,
       });
       await this.email.send({
         to: b.owner.email,
@@ -174,6 +249,7 @@ export class NotificationsService {
         title: 'Estabelecimento suspenso',
         body: `${b.name} foi suspenso e não aparece no marketplace. Fale com o suporte.`,
         data: { businessId },
+        url: OWNER_URL,
       });
     });
   }
@@ -185,11 +261,38 @@ export class NotificationsService {
     });
   }
 
+  /** Grava no sino e replica como push nos aparelhos inscritos do usuário. */
   private async inApp(
     userId: string,
-    n: { type: string; title: string; body: string; data?: Prisma.InputJsonValue },
+    {
+      url,
+      ...n
+    }: { type: string; title: string; body: string; data?: Prisma.InputJsonValue; url: string },
   ): Promise<void> {
     await this.prisma.notification.create({ data: { userId, ...n } });
+    await this.push.sendToUser(userId, { title: n.title, body: n.body, url, tag: n.type });
+  }
+
+  /**
+   * E-mail só para endereço verificado e real (cliente criada no balcão tem
+   * e-mail sintético). Texto vem do banco: sempre escapado.
+   */
+  private async emailTo(
+    to: { name: string; email: string; emailVerified: boolean },
+    title: string,
+    paragraphs: string[],
+    action: { label: string; url: string },
+  ): Promise<void> {
+    if (!to.emailVerified || to.email.endsWith(`@${PHONE_EMAIL_DOMAIN}`)) return;
+    await this.email.send({
+      to: to.email,
+      subject: `${title} — belezaOur`,
+      html: emailLayout(
+        title,
+        [`Olá, ${escapeHtml(to.name)}.`, ...paragraphs.map(escapeHtml)],
+        action,
+      ),
+    });
   }
 
   /** WhatsApp para a cliente só com consentimento registrado (LGPD, FR-070). */
