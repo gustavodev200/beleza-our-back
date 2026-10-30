@@ -2,7 +2,9 @@ import {
   HttpClient,
   businessFixture,
   clientSession,
+  emailClientSession,
   nextWeekday,
+  uniquePhone,
   workday,
   prisma,
   spInstant,
@@ -134,5 +136,41 @@ describe('Disponibilidade e reserva (US1)', () => {
     });
     const res = await client.http.post('/appointments', bookBody(fx, spInstant(MONDAY(), '09:00')));
     expect(res.body.code).toBe('PHONE_NOT_VERIFIED');
+  });
+
+  it('cliente por e-mail reserva informando o WhatsApp, que fica na conta', async () => {
+    const fx = await businessFixture();
+    const client = await emailClientSession();
+    const at = spInstant(MONDAY(), '09:00');
+
+    const noPhone = await client.http.post('/appointments', bookBody(fx, at));
+    expect(noPhone.status).toBe(422);
+    expect(noPhone.body.code).toBe('PHONE_REQUIRED');
+
+    const phone = uniquePhone();
+    const res = await client.http.post('/appointments', bookBody(fx, at, { clientPhone: phone }));
+    expect(res.status).toBe(201);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: client.userId } });
+    expect(user.phoneNumber).toBe(phone);
+    expect(user.phoneNumberVerified).toBe(false);
+
+    // Com telefone na conta, não precisa mandar de novo.
+    const again = await client.http.post(
+      '/appointments',
+      bookBody(fx, spInstant(MONDAY(), '10:00')),
+    );
+    expect(again.status).toBe(201);
+  });
+
+  it('cliente por e-mail não usa WhatsApp de outra conta', async () => {
+    const fx = await businessFixture();
+    const other = await clientSession();
+    const client = await emailClientSession();
+    const res = await client.http.post(
+      '/appointments',
+      bookBody(fx, spInstant(MONDAY(), '09:00'), { clientPhone: other.phone }),
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PHONE_IN_USE');
   });
 });

@@ -6,6 +6,7 @@ import {
   linkFrom,
   prisma,
   readOutbox,
+  signUpClient,
   signUpOwner,
   uniqueEmail,
   uniqueCpf,
@@ -148,6 +149,62 @@ describe('Auth do dono (e-mail e senha)', () => {
       password: owner.password,
     });
     expect(locked.status).toBe(429);
+  });
+});
+
+describe('Auth da cliente (e-mail e senha)', () => {
+  it('cria conta como CLIENT com aceite dos termos e ignora CPF enviado', async () => {
+    const http = new HttpClient();
+    const email = uniqueEmail('cliente');
+    const res = await http.post('/auth/sign-up/email', {
+      name: 'Maria Cliente',
+      email,
+      password: 'senha-forte-123',
+      accountType: 'client',
+      cpfCnpj: uniqueCpf(),
+      acceptedTerms: true,
+    });
+    expect(res.status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(user.role).toBe('CLIENT');
+    expect(user.cpfCnpj).toBeNull();
+    expect(user.termsAcceptedAt).toBeInstanceOf(Date);
+    expect(user.termsVersion).toBeTruthy();
+
+    const mail = await lastEmailTo(email, 'Confirme seu e-mail');
+    expect(mail.html).toContain('agendar seus horários');
+    expect(mail.html).not.toContain('painel');
+  });
+
+  it('recusa cadastro sem aceite ou com o domínio interno de telefone', async () => {
+    const http = new HttpClient();
+    const base = { name: 'Maria Cliente', password: 'senha-forte-123', accountType: 'client' };
+    const noTerms = await http.post('/auth/sign-up/email', { ...base, email: uniqueEmail('cliente') });
+    expect(noTerms.status).toBe(400);
+    const internal = await http.post('/auth/sign-up/email', {
+      ...base,
+      email: '62999990000@phone.belezaour.local',
+      acceptedTerms: true,
+    });
+    expect(internal.status).toBe(400);
+  });
+
+  it('exige e-mail verificado e então entra com a senha', async () => {
+    const client = await signUpClient();
+    const denied = await client.http.post('/auth/sign-in/email', {
+      email: client.email,
+      password: client.password,
+    });
+    expect(denied.status).toBe(403);
+
+    await verifyEmailOf(client.email);
+    const ok = await client.http.post('/auth/sign-in/email', {
+      email: client.email,
+      password: client.password,
+    });
+    expect(ok.status).toBe(200);
+    const me = await client.http.get('/me');
+    expect(me.body.role).toBe('CLIENT');
   });
 });
 

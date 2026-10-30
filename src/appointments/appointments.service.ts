@@ -97,6 +97,9 @@ function reminderFlags(startsAt: Date, now = new Date()) {
   };
 }
 
+const phoneInUse = () =>
+  Errors.conflict('PHONE_IN_USE', 'Este WhatsApp já está ligado a outra conta');
+
 @Injectable()
 export class AppointmentsService {
   constructor(
@@ -108,19 +111,46 @@ export class AppointmentsService {
 
   // ---------------------------------------------------------------- reserva --
 
-  /** Reserva pelo app (US1). Telefone verificado é obrigatório (FR-025). */
+  /**
+   * Reserva pelo app (US1). Exige identidade confirmada: telefone verificado
+   * (OTP) ou e-mail verificado (conta por e-mail e senha). A conta por e-mail
+   * sem telefone informa o WhatsApp aqui, para avisos e contato do salão.
+   */
   async createFromApp(user: AuthUser, dto: CreateAppointmentDto) {
-    if (!user.phoneNumberVerified) throw Errors.phoneNotVerified();
+    if (!user.phoneNumberVerified && !user.emailVerified) throw Errors.phoneNotVerified();
+    const phoneNumber = user.phoneNumber ? undefined : dto.clientPhone;
+    if (!user.phoneNumber && !phoneNumber) {
+      throw Errors.unprocessable('PHONE_REQUIRED', 'Informe seu WhatsApp para agendar');
+    }
     const business = await this.prisma.business.findFirst({
       where: { id: dto.businessId, status: 'ACTIVE', city: { active: true } },
       select: { id: true, status: true, requiresConfirmation: true },
     });
     if (!business) throw Errors.notFound('Estabelecimento');
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { name: dto.clientName, whatsappConsentAt: new Date() },
-    });
+    if (phoneNumber) {
+      const owner = await this.prisma.user.findUnique({
+        where: { phoneNumber },
+        select: { id: true },
+      });
+      if (owner && owner.id !== user.id) throw phoneInUse();
+    }
+    await this.prisma.user
+      .update({
+        where: { id: user.id },
+        data: {
+          name: dto.clientName,
+          whatsappConsentAt: new Date(),
+          ...(phoneNumber ? { phoneNumber, phoneNumberVerified: false } : {}),
+        },
+      })
+      .catch((e: unknown) => {
+        // Corrida com outra conta gravando o mesmo telefone.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          throw phoneInUse();
+        }
+        throw e;
+      });
 
     const id = await this.book({
       business,

@@ -50,6 +50,40 @@ function bodyText(body: unknown, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+/**
+ * O mesmo /sign-up/email atende dono e cliente; o corpo traz `accountType:
+ * "client"` no cadastro da cliente. O papel continua decidido aqui no servidor.
+ */
+function isClientSignUp(body: unknown): boolean {
+  return bodyText(body, 'accountType') === 'client';
+}
+
+/** Regras do cadastro por e-mail (dono e cliente) antes do Better Auth criar a conta. */
+async function checkEmailSignUp(prisma: PrismaClient, body: unknown): Promise<void> {
+  if ((body as Record<string, unknown> | undefined)?.acceptedTerms !== true) {
+    throw new APIError('BAD_REQUEST', {
+      message: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
+    });
+  }
+  // Domínio interno das contas por telefone: nunca pode ser cadastrado por e-mail.
+  if (bodyText(body, 'email').toLowerCase().endsWith(`@${PHONE_EMAIL_DOMAIN}`)) {
+    throw new APIError('BAD_REQUEST', { message: 'E-mail inválido' });
+  }
+  if (isClientSignUp(body)) return;
+
+  const document = normalizeCpfCnpj(bodyText(body, 'cpfCnpj'));
+  if (!document) throw new APIError('BAD_REQUEST', { message: 'CPF ou CNPJ inválido' });
+  const taken = await prisma.user.findUnique({
+    where: { cpfCnpj: document },
+    select: { id: true },
+  });
+  if (taken) {
+    throw new APIError('UNPROCESSABLE_ENTITY', {
+      message: 'Já existe uma conta com este CPF ou CNPJ',
+    });
+  }
+}
+
 const tooMany = () =>
   new APIError('TOO_MANY_REQUESTS', { message: 'Muitas tentativas. Aguarde e tente novamente.' });
 
@@ -117,6 +151,7 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
       autoSignInAfterVerification: true,
       expiresIn: 24 * 60 * 60,
       sendVerificationEmail: ({ user, url }) => {
+        const isOwner = (user as { role?: string }).role === 'BUSINESS_OWNER';
         void email.send({
           to: user.email,
           subject: 'Confirme seu e-mail — belezaOur',
@@ -124,7 +159,9 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
             'Confirme seu e-mail',
             [
               `Olá, ${escapeHtml(user.name)}.`,
-              'Confirme seu e-mail para acessar o painel do seu estabelecimento.',
+              isOwner
+                ? 'Confirme seu e-mail para acessar o painel do seu estabelecimento.'
+                : 'Confirme seu e-mail para entrar na sua conta e agendar seus horários.',
             ],
             { label: 'Confirmar e-mail', url },
           ),
@@ -164,19 +201,17 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
         create: {
           // Papel decidido pelo fluxo, nunca pelo corpo da requisição (FR-006).
           before: (user, ctx) => {
-            const isOwnerSignUp = ctx?.path === '/sign-up/email';
+            const isEmailSignUp = ctx?.path === '/sign-up/email';
+            const isOwnerSignUp = isEmailSignUp && !isClientSignUp(ctx.body);
             return Promise.resolve({
               data: {
                 ...user,
                 role: isOwnerSignUp ? 'BUSINESS_OWNER' : 'CLIENT',
                 banned: false,
-                ...(isOwnerSignUp
-                  ? {
-                      cpfCnpj: normalizeCpfCnpj(bodyText(ctx.body, 'cpfCnpj')),
-                      termsAcceptedAt: new Date(),
-                      termsVersion: TERMS_VERSION,
-                    }
-                  : { cpfCnpj: null, termsAcceptedAt: null, termsVersion: null }),
+                cpfCnpj: isOwnerSignUp ? normalizeCpfCnpj(bodyText(ctx.body, 'cpfCnpj')) : null,
+                // O aceite é checado no hook before para os dois cadastros por e-mail.
+                termsAcceptedAt: isEmailSignUp ? new Date() : null,
+                termsVersion: isEmailSignUp ? TERMS_VERSION : null,
               },
             });
           },
@@ -200,25 +235,7 @@ export function createAuth({ prisma, env, email, whatsapp }: AuthDeps) {
 
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path === '/sign-up/email') {
-          const document = normalizeCpfCnpj(bodyText(ctx.body, 'cpfCnpj'));
-          if (!document) throw new APIError('BAD_REQUEST', { message: 'CPF ou CNPJ inválido' });
-          const body = ctx.body as Record<string, unknown> | undefined;
-          if (body?.acceptedTerms !== true) {
-            throw new APIError('BAD_REQUEST', {
-              message: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
-            });
-          }
-          const taken = await prisma.user.findUnique({
-            where: { cpfCnpj: document },
-            select: { id: true },
-          });
-          if (taken) {
-            throw new APIError('UNPROCESSABLE_ENTITY', {
-              message: 'Já existe uma conta com este CPF ou CNPJ',
-            });
-          }
-        }
+        if (ctx.path === '/sign-up/email') await checkEmailSignUp(prisma, ctx.body);
 
         if (ctx.path === '/sign-in/email') {
           const emailInput = bodyText(ctx.body, 'email').toLowerCase();

@@ -18,6 +18,8 @@ export const createAppointmentSchema = z
     startsAt: instant,
     notes,
     clientName: z.string().trim().min(2).max(80),
+    // Só para a conta por e-mail que ainda não tem telefone; ignorado se já tiver.
+    clientPhone: brPhoneSchema.optional(),
     // Consentimento explícito para mensagens no WhatsApp (LGPD, FR-070).
     whatsappConsent: z.literal(true),
   })

@@ -217,6 +217,33 @@ export async function ownerSession() {
   return { ...owner, userId: user.id };
 }
 
+export async function signUpClient(email = uniqueEmail('cliente'), password = 'senha-forte-123') {
+  const http = new HttpClient();
+  const res = await http.post('/auth/sign-up/email', {
+    name: 'Cliente Teste',
+    email,
+    password,
+    accountType: 'client',
+    acceptedTerms: true,
+  });
+  if (res.status !== 200)
+    throw new Error(`sign-up da cliente falhou: ${res.status} ${JSON.stringify(res.body)}`);
+  return { http, email, password };
+}
+
+/** Cliente por e-mail e senha, com e-mail verificado e sessão ativa (sem telefone). */
+export async function emailClientSession() {
+  const client = await signUpClient();
+  await verifyEmailOf(client.email);
+  const res = await client.http.post('/auth/sign-in/email', {
+    email: client.email,
+    password: client.password,
+  });
+  if (res.status !== 200) throw new Error(`login da cliente falhou: ${res.status}`);
+  const user = await prisma.user.findUniqueOrThrow({ where: { email: client.email } });
+  return { ...client, userId: user.id };
+}
+
 /** Cliente logada por código de WhatsApp. */
 export async function clientSession(phone = uniquePhone()) {
   const http = new HttpClient();
