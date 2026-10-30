@@ -247,7 +247,7 @@ prazo de cancelamento (refletido na regra de cancelamento) e vê indicadores coe
 - **FR-016**: O dono MUST enviar o cadastro para aprovação somente com e-mail verificado, ao menos um serviço visível, uma profissional ativa vinculada a ele e horário definido.
 - **FR-017**: O estabelecimento MUST seguir os status `pendente` → `ativo` | `recusado`; `recusado` → `pendente` (reenvio); `ativo` ↔ `suspenso`; qualquer outra transição MUST ser recusada.
 - **FR-018**: Funções operacionais (agenda, agendamentos, bloqueios, balcão) MUST estar disponíveis apenas para estabelecimentos `ativo`.
-- **FR-019**: O dono MUST poder exigir confirmação manual dos agendamentos vindos do app (desligado por padrão).
+- **FR-019**: O dono MUST poder exigir confirmação manual dos agendamentos vindos do app (ligado por padrão).
 
 **Disponibilidade e agendamento**
 

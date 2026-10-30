@@ -272,7 +272,7 @@ model Business {
   submittedAt          DateTime?      @map("submitted_at") @db.Timestamptz(3)
   approvedAt           DateTime?      @map("approved_at") @db.Timestamptz(3)
   featured             Boolean        @default(false)
-  requiresConfirmation Boolean        @default(false) @map("requires_confirmation")
+  requiresConfirmation Boolean        @default(true)  @map("requires_confirmation")
   ratingAvg            Decimal        @default(0) @map("rating_avg") @db.Decimal(3, 2)
   ratingCount          Int            @default(0) @map("rating_count")
   minPriceCents        Int?           @map("min_price_cents")
