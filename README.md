@@ -87,6 +87,25 @@ pelo conteúdo e auditoria de toda ação administrativa.
 
 ## Variáveis de ambiente
 
-Ver [.env.example](.env.example). Em produção, `RESEND_API_KEY` e `CLOUDINARY_URL` são obrigatórios e
-`SWAGGER_ENABLED` precisa ser `false` (a API não sobe caso contrário). Defina `TRUST_PROXY_HOPS` com o
-número de proxies reversos à frente da API.
+Ver [.env.example](.env.example). Em produção `SWAGGER_ENABLED` precisa ser `false` e `CRON_SECRET`,
+se preenchido, ter ao menos 32 caracteres (a API não sobe caso contrário). Defina `TRUST_PROXY_HOPS`
+com o número de proxies reversos à frente da API.
+
+Integrações vazias não impedem o boot — a API avisa no log e desliga a função:
+
+| Variável | Sem ela |
+|---|---|
+| `RESEND_API_KEY` (+ `EMAIL_FROM` com domínio verificado no Resend) | e-mails só no log; cadastro não consegue verificar conta |
+| `CLOUDINARY_URL` | uploads gravam URL fictícia |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | sem push no PWA (card de ativar some no front) |
+| `CRON_SECRET` | `POST /api/internal/cron/tick` responde 404; só o agendador interno roda |
+
+## Deploy (Render)
+
+1. Preencha as variáveis acima no Environment do serviço (`npx web-push generate-vapid-keys` e
+   `openssl rand -hex 32` geram VAPID e `CRON_SECRET`).
+2. Deploy: o build roda `prisma migrate deploy`; confira `GET /api/health`.
+3. Cron: no plano free a instância dorme sem tráfego e o agendador para. Configure um cron de 1 min
+   (cron-job.org) chamando o tick com `Authorization: Bearer <CRON_SECRET>` e o secret `CRON_SECRET`
+   no repositório (workflow `.github/workflows/cron-tick.yml`, a cada 5 min). Detalhes em
+   [docs/notifications-cron.md](docs/notifications-cron.md).
