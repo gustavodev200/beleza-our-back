@@ -38,12 +38,8 @@ export const envSchema = z
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;
-    // Em produção um serviço externo ausente é configuração errada, não modo de log.
-    for (const key of ['RESEND_API_KEY', 'CLOUDINARY_URL'] as const) {
-      if (!env[key]) {
-        ctx.addIssue({ code: 'custom', path: [key], message: `${key} é obrigatório em produção` });
-      }
-    }
+    // Integrações ausentes não impedem o boot (ambiente de teste sem chaves);
+    // main.ts avisa no log. Ver missingIntegrations.
     if (env.SWAGGER_ENABLED) {
       ctx.addIssue({
         code: 'custom',
@@ -68,6 +64,11 @@ export function loadEnv(): Env {
   }
   cached = parsed.data;
   return cached;
+}
+
+/** Integrações sem chave: e-mails só vão para o log e uploads usam URL fictícia. */
+export function missingIntegrations(env: Env): string[] {
+  return (['RESEND_API_KEY', 'CLOUDINARY_URL'] as const).filter((key) => !env[key]);
 }
 
 /** Origens permitidas para CORS e Better Auth (sempre inclui o front). */

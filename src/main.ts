@@ -6,7 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { AppModule } from './app.module';
-import { allowedOrigins, loadEnv } from './config/env';
+import { allowedOrigins, loadEnv, missingIntegrations } from './config/env';
 
 async function bootstrap(): Promise<void> {
   const env = loadEnv();
@@ -14,6 +14,11 @@ async function bootstrap(): Promise<void> {
     logger: env.NODE_ENV === 'test' ? ['error', 'warn'] : undefined,
   });
   const logger = new Logger('Bootstrap');
+  if (env.NODE_ENV === 'production') {
+    for (const key of missingIntegrations(env)) {
+      logger.warn(`${key} vazio: integração desligada (e-mail só em log / upload fictício)`);
+    }
+  }
 
   // Sem isso, atrás do proxy todo cliente teria o IP do proxy e o rate limit
   // viraria um balde único para a internet inteira.
