@@ -56,6 +56,7 @@ enum BlockReason {
   DAY_OFF
   EXTENDED_LUNCH
   COURSE
+  BREAK
 }
 
 enum ReviewTag {
@@ -421,14 +422,14 @@ model Appointment {
 model TimeBlock {
   id             String      @id @default(uuid())
   businessId     String      @map("business_id")
-  professionalId String      @map("professional_id")
+  professionalId String?     @map("professional_id") // null = estabelecimento todo fechado
   startsAt       DateTime    @map("starts_at") @db.Timestamptz(3)
   endsAt         DateTime    @map("ends_at") @db.Timestamptz(3)
   reason         BlockReason
   createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
 
   business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startsAt])
   @@index([professionalId, startsAt])

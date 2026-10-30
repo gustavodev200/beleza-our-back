@@ -83,7 +83,13 @@ export class AvailabilityService {
         select: { professionalId: true, startsAt: true, endsAt: true },
       }),
       db.timeBlock.findMany({
-        where: { professionalId: { in: ids }, startsAt: { lt: end }, endsAt: { gt: start } },
+        // Bloqueio sem profissional fecha o estabelecimento todo.
+        where: {
+          businessId: q.businessId,
+          OR: [{ professionalId: { in: ids } }, { professionalId: null }],
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+        },
         select: { professionalId: true, startsAt: true, endsAt: true },
       }),
     ]);
@@ -91,7 +97,7 @@ export class AvailabilityService {
     const agendas: ProfessionalAgenda[] = ids.map((id) => ({
       id,
       busy: [...appointments, ...blocks]
-        .filter((b) => b.professionalId === id)
+        .filter((b) => b.professionalId === id || b.professionalId === null)
         .map((b) => ({ start: b.startsAt, end: b.endsAt })),
     }));
 

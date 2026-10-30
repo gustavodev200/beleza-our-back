@@ -39,6 +39,25 @@ describe('Descoberta (US6)', () => {
     expect(byNeighborhood.body.items).toHaveLength(1);
   });
 
+  it('serviço novo já nasce com as profissionais ativas e aparece para a cliente', async () => {
+    const fx = await businessFixture();
+    const created = await fx.owner.http.post('/owner/services', {
+      name: 'Hidratação',
+      categoryId: fx.categoryId,
+      durationMinutes: 45,
+      priceCents: 7000,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.professionals).toHaveLength(2);
+    const profile = await new HttpClient().get(`/businesses/${fx.business.slug}`);
+    expect(profile.body.services.map((s: { name: string }) => s.name)).toContain('Hidratação');
+
+    const onlyAna = await fx.owner.http.patch(`/owner/services/${created.body.id}`, {
+      professionalIds: [fx.professionalIds[0]],
+    });
+    expect(onlyAna.body.professionals).toEqual([{ professionalId: fx.professionalIds[0] }]);
+  });
+
   it('filtra por slug da cidade; cidade sem cadastro volta vazia', async () => {
     const tag = `Ww${Date.now()}`;
     const fx = await businessFixture({ name: `Salão ${tag}` });

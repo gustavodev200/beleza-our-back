@@ -195,11 +195,13 @@ export class MarketplaceService {
     const now = new Date();
     const weekday = weekdayOf(localDateOf(now));
     const today = b.hours.find((h) => h.weekday === weekday);
+    const paused = await this.pausedNow([b.id], now);
     const [next] = await this.availabilityService.nextFreeSlots(b.id, 1, now);
     const reviews = await this.reviewsPage(b.id, { page: 1, pageSize: 5 });
 
     return {
       ...this.baseCard(b),
+      openNow: openNowOf(b.hours, now) && !paused.has(b.id),
       description: b.description,
       whatsapp: b.whatsapp,
       phone: b.phone,
@@ -272,7 +274,6 @@ export class MarketplaceService {
         r.approvedAt && Date.now() - r.approvedAt.getTime() < NEW_BADGE_DAYS * 86_400_000,
       ),
       isAutonomous: r.type === 'AUTONOMOUS',
-      openNow: openNowOf(r.hours),
       distanceKm:
         lat !== undefined && lng !== undefined && r.latitude !== null && r.longitude !== null
           ? Number(distanceKm(lat, lng, r.latitude, r.longitude).toFixed(1))
@@ -280,10 +281,31 @@ export class MarketplaceService {
     };
   }
 
-  private toCards(rows: CardRow[], q: { lat?: number; lng?: number }) {
+  /** Estabelecimentos com pausa geral (bloqueio sem profissional) cobrindo `now`. */
+  private async pausedNow(businessIds: string[], now: Date): Promise<Set<string>> {
+    if (!businessIds.length) return new Set();
+    const rows = await this.prisma.timeBlock.findMany({
+      where: {
+        businessId: { in: businessIds },
+        professionalId: null,
+        startsAt: { lte: now },
+        endsAt: { gt: now },
+      },
+      select: { businessId: true },
+    });
+    return new Set(rows.map((r) => r.businessId));
+  }
+
+  private async toCards(rows: CardRow[], q: { lat?: number; lng?: number }) {
+    const now = new Date();
+    const paused = await this.pausedNow(
+      rows.map((r) => r.id),
+      now,
+    );
     return Promise.all(
       rows.map(async (r) => ({
         ...this.baseCard(r, q.lat, q.lng),
+        openNow: openNowOf(r.hours, now) && !paused.has(r.id),
         nextSlots: await this.availabilityService.nextFreeSlots(r.id, 3),
       })),
     );

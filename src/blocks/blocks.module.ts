@@ -27,18 +27,19 @@ import { Errors } from '../common/errors';
 import { DATE_REGEX, dayBounds, zonedInstant } from '../common/utils/time';
 import { PrismaService } from '../prisma/prisma.service';
 
-const DURATIONS = { '1h': 60, '2h': 120, '4h': 240, day: null } as const;
+const DURATIONS = { '30m': 30, '1h': 60, '2h': 120, '4h': 240, day: null } as const;
 
 const createBlockSchema = z
   .object({
-    professionalId: z.string().uuid(),
+    /** Ausente = pausa do estabelecimento todo (fecha para todas). */
+    professionalId: z.string().uuid().optional(),
     date: z.string().regex(DATE_REGEX, 'Use YYYY-MM-DD'),
     start: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM')
       .optional(),
-    duration: z.enum(['1h', '2h', '4h', 'day']),
-    reason: z.enum(['APPOINTMENT', 'DAY_OFF', 'EXTENDED_LUNCH', 'COURSE']),
+    duration: z.enum(['30m', '1h', '2h', '4h', 'day']),
+    reason: z.enum(['APPOINTMENT', 'DAY_OFF', 'EXTENDED_LUNCH', 'COURSE', 'BREAK']),
   })
   .strict()
   .refine((v) => v.duration === 'day' || Boolean(v.start), 'Informe o início');
@@ -70,11 +71,15 @@ export class BlocksService {
    * Agendamentos sobrepostos voltam como aviso; nenhum é cancelado (FR-030).
    */
   async create(businessId: string, dto: CreateBlockDto) {
-    const professional = await this.prisma.professional.findFirst({
-      where: { id: dto.professionalId, businessId },
-      select: { id: true },
-    });
-    if (!professional) throw Errors.notFound('Profissional');
+    let professionalId: string | null = null;
+    if (dto.professionalId) {
+      const professional = await this.prisma.professional.findFirst({
+        where: { id: dto.professionalId, businessId },
+        select: { id: true },
+      });
+      if (!professional) throw Errors.notFound('Profissional');
+      professionalId = professional.id;
+    }
 
     const minutes = DURATIONS[dto.duration];
     const [h, m] = (dto.start ?? '00:00').split(':').map(Number);
@@ -83,13 +88,13 @@ export class BlocksService {
     const endsAt = minutes === null ? dayEnd : new Date(startsAt.getTime() + minutes * 60_000);
 
     const block = await this.prisma.timeBlock.create({
-      data: { businessId, professionalId: professional.id, startsAt, endsAt, reason: dto.reason },
+      data: { businessId, professionalId, startsAt, endsAt, reason: dto.reason },
       select: blockSelect,
     });
     const conflicts = await this.prisma.appointment.findMany({
       where: {
         businessId,
-        professionalId: professional.id,
+        ...(professionalId ? { professionalId } : {}),
         status: { in: ['PENDING', 'CONFIRMED'] },
         startsAt: { lt: endsAt },
         endsAt: { gt: startsAt },
@@ -109,7 +114,9 @@ export class BlocksService {
     return this.prisma.timeBlock.findMany({
       where: {
         businessId,
-        professionalId: q.professionalId,
+        ...(q.professionalId
+          ? { OR: [{ professionalId: q.professionalId }, { professionalId: null }] }
+          : {}),
         startsAt: { lt: dayBounds(q.to).end },
         endsAt: { gt: dayBounds(q.from).start },
       },

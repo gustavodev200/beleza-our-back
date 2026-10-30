@@ -29,7 +29,15 @@ export class OwnerAgendaService {
         orderBy: { startsAt: 'asc' },
       }),
       this.prisma.timeBlock.findMany({
-        where: { businessId, startsAt: { lt: end }, endsAt: { gt: start }, ...professionalFilter },
+        where: {
+          businessId,
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          // Pausa do estabelecimento todo aparece em qualquer filtro.
+          ...(professionalIds?.length
+            ? { OR: [{ professionalId: { in: professionalIds } }, { professionalId: null }] }
+            : {}),
+        },
         select: { id: true, professionalId: true, startsAt: true, endsAt: true, reason: true },
         orderBy: { startsAt: 'asc' },
       }),

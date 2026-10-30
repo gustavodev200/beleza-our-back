@@ -141,6 +141,47 @@ describe('Agenda do dono (US4)', () => {
     expect((await fx.owner.http.delete(`/owner/blocks/${dayOff.body.block.id}`)).status).toBe(204);
   });
 
+  it('pausa do estabelecimento todo fecha a agenda de todas e o "aberto agora"', async () => {
+    const fx = await businessFixture();
+    const date = workday(3);
+    const paused = await fx.owner.http.post('/owner/blocks', {
+      date,
+      start: '15:00',
+      duration: '1h',
+      reason: 'BREAK',
+    });
+    expect(paused.status).toBe(201);
+    expect(paused.body.block.professionalId).toBeNull();
+
+    const slots = await new HttpClient().get(
+      `/businesses/${fx.business.slug}/availability?serviceId=${fx.serviceId}&date=${date}`,
+    );
+    const starts = slots.body.slots.map((s: { startsAt: string }) => s.startsAt);
+    expect(starts).not.toContain(spInstant(date, '15:00'));
+    expect(starts).not.toContain(spInstant(date, '14:30'));
+    expect(starts).toContain(spInstant(date, '16:00'));
+
+    // Expediente de 24h hoje: só a pausa pode fechar.
+    const now = new Date();
+    const weekday = new Date(now.getTime() - 3 * 3_600_000).getUTCDay();
+    await prisma.businessHours.upsert({
+      where: { businessId_weekday: { businessId: fx.business.id, weekday } },
+      create: { businessId: fx.business.id, weekday, opensAt: 0, closesAt: 24 * 60 },
+      update: { opensAt: 0, closesAt: 24 * 60, breaks: [] },
+    });
+    const profile = () => new HttpClient().get(`/businesses/${fx.business.slug}`);
+    expect((await profile()).body.openNow).toBe(true);
+    await prisma.timeBlock.create({
+      data: {
+        businessId: fx.business.id,
+        startsAt: new Date(now.getTime() - 60_000),
+        endsAt: new Date(now.getTime() + 3_600_000),
+        reason: 'BREAK',
+      },
+    });
+    expect((await profile()).body.openNow).toBe(false);
+  });
+
   it('visão geral, agenda e clientes', async () => {
     const fx = await businessFixture({ requiresConfirmation: true });
     const date = workday(5);

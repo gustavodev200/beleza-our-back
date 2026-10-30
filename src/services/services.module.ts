@@ -29,6 +29,8 @@ const serviceFields = {
   durationMinutes: z.number().int().min(5).max(480).multipleOf(5),
   priceCents: z.number().int().min(0).max(10_000_000),
   visible: z.boolean().optional(),
+  /** Quem faz o serviço. Sem profissional o serviço não aparece para as clientes. */
+  professionalIds: z.array(z.string().uuid()).max(100).optional(),
 };
 const createServiceSchema = z.object(serviceFields).strict();
 const updateServiceSchema = z
@@ -67,8 +69,22 @@ export class ServicesService {
   async create(business: Business, dto: CreateServiceDto) {
     this.businesses.assertEditable(business);
     await this.assertCategory(dto.categoryId);
+    const { professionalIds, ...data } = dto;
+    // Sem escolha explícita, todas as profissionais ativas fazem o serviço novo.
+    const ids = professionalIds
+      ? await this.assertProfessionals(business.id, professionalIds)
+      : (
+          await this.prisma.professional.findMany({
+            where: { businessId: business.id, active: true },
+            select: { id: true },
+          })
+        ).map((p) => p.id);
     const service = await this.prisma.service.create({
-      data: { ...dto, businessId: business.id },
+      data: {
+        ...data,
+        businessId: business.id,
+        professionals: { create: ids.map((professionalId) => ({ professionalId })) },
+      },
       select: serviceSelect,
     });
     await this.businesses.refreshDerived(business.id);
@@ -79,9 +95,19 @@ export class ServicesService {
     this.businesses.assertEditable(business);
     await this.findOwned(business.id, id);
     if (dto.categoryId) await this.assertCategory(dto.categoryId);
+    const { professionalIds, ...data } = dto;
+    const ids = professionalIds && (await this.assertProfessionals(business.id, professionalIds));
     const service = await this.prisma.service.update({
       where: { id },
-      data: dto,
+      data: {
+        ...data,
+        ...(ids && {
+          professionals: {
+            deleteMany: {},
+            create: ids.map((professionalId) => ({ professionalId })),
+          },
+        }),
+      },
       select: serviceSelect,
     });
     await this.businesses.refreshDerived(business.id);
@@ -108,6 +134,17 @@ export class ServicesService {
     });
     if (!service) throw Errors.notFound('Serviço');
     return service;
+  }
+
+  /** IDs de outro estabelecimento respondem 422 (Princípio VIII). */
+  private async assertProfessionals(businessId: string, ids: string[]): Promise<string[]> {
+    const unique = [...new Set(ids)];
+    const count = await this.prisma.professional.count({
+      where: { businessId, id: { in: unique } },
+    });
+    if (count !== unique.length)
+      throw Errors.unprocessable('INVALID_PROFESSIONAL', 'Profissional inválida');
+    return unique;
   }
 
   private async assertCategory(categoryId: string): Promise<void> {
