@@ -48,6 +48,12 @@ export class EmailService {
     }
     if (!this.client) {
       this.logger.log(`[dev] e-mail "${message.subject}" para ${maskEmail(message.to)}`);
+      // Só em development e sem provedor: o link de ação (verificação, reset) aparece
+      // no debug para permitir testar o fluxo local, como o código OTP do WhatsApp.
+      const link = /href="([^"]+)"/.exec(message.html)?.[1];
+      if (this.env.NODE_ENV === 'development' && link) {
+        this.logger.debug(`[email:dev] ${link.replace(/&amp;/g, '&')}`);
+      }
       return true;
     }
     try {
