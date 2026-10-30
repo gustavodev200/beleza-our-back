@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { parseBreaks } from '../availability/availability.engine';
 import { Errors } from '../common/errors';
 import { skipTake, toPage, type Pagination } from '../common/utils/pagination';
 import { addDaysToDate, dayBounds, localDateOf } from '../common/utils/time';
@@ -45,12 +46,11 @@ export class OwnerAgendaService {
       appointments,
       blocks,
       professionals,
-      hours: hours.map(({ weekday, opensAt, closesAt, breakStart, breakEnd }) => ({
+      hours: hours.map(({ weekday, opensAt, closesAt, breaks }) => ({
         weekday,
         opensAt,
         closesAt,
-        breakStart,
-        breakEnd,
+        breaks: parseBreaks(breaks),
       })),
     };
   }

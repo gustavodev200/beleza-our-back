@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { AvailabilityQuery } from '../appointments/appointment.schemas';
+import { isOpenAt, parseBreaks } from '../availability/availability.engine';
 import { AvailabilityService } from '../availability/availability.service';
 import { Errors } from '../common/errors';
 import { skipTake, toPage, type Pagination } from '../common/utils/pagination';
@@ -31,9 +32,18 @@ const cardSelect = {
   latitude: true,
   longitude: true,
   featured: true,
+  hours: { select: { weekday: true, opensAt: true, closesAt: true, breaks: true } },
 } satisfies Prisma.BusinessSelect;
 
 type CardRow = Prisma.BusinessGetPayload<{ select: typeof cardSelect }>;
+
+/** Aberto agora (fuso SP): expediente de hoje e fora das pausas. */
+function openNowOf(hours: CardRow['hours'], now = new Date()): boolean {
+  const today = hours.find((h) => h.weekday === weekdayOf(localDateOf(now)));
+  return Boolean(
+    today && isOpenAt({ ...today, breaks: parseBreaks(today.breaks) }, minutesOfDay(now)),
+  );
+}
 
 export function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const rad = (v: number) => (v * Math.PI) / 180;
@@ -185,18 +195,6 @@ export class MarketplaceService {
     const now = new Date();
     const weekday = weekdayOf(localDateOf(now));
     const today = b.hours.find((h) => h.weekday === weekday);
-    const minute = minutesOfDay(now);
-    const openNow = Boolean(
-      today &&
-      minute >= today.opensAt &&
-      minute < today.closesAt &&
-      !(
-        today.breakStart !== null &&
-        today.breakEnd !== null &&
-        minute >= today.breakStart &&
-        minute < today.breakEnd
-      ),
-    );
     const [next] = await this.availabilityService.nextFreeSlots(b.id, 1, now);
     const reviews = await this.reviewsPage(b.id, { page: 1, pageSize: 5 });
 
@@ -208,19 +206,17 @@ export class MarketplaceService {
       address: b.address,
       city: b.city,
       categories: b.categories.map((c) => c.category),
-      hours: b.hours.map(({ weekday: w, opensAt, closesAt, breakStart, breakEnd }) => ({
+      hours: b.hours.map(({ weekday: w, opensAt, closesAt, breaks }) => ({
         weekday: w,
         opensAt,
         closesAt,
-        breakStart,
-        breakEnd,
+        breaks: parseBreaks(breaks),
       })),
       services: b.services.map(({ professionals, ...s }) => ({
         ...s,
         professionalIds: professionals.map((p) => p.professionalId),
       })),
       professionals: b.professionals,
-      openNow,
       closedToday: !today,
       nextSlot: next ?? null,
       latestReviews: reviews.items,
@@ -276,6 +272,7 @@ export class MarketplaceService {
         r.approvedAt && Date.now() - r.approvedAt.getTime() < NEW_BADGE_DAYS * 86_400_000,
       ),
       isAutonomous: r.type === 'AUTONOMOUS',
+      openNow: openNowOf(r.hours),
       distanceKm:
         lat !== undefined && lng !== undefined && r.latitude !== null && r.longitude !== null
           ? Number(distanceKm(lat, lng, r.latitude, r.longitude).toFixed(1))

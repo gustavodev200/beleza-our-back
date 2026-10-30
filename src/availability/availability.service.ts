@@ -5,6 +5,7 @@ import { addDaysToDate, dayBounds, localDateOf, weekdayOf } from '../common/util
 import { PrismaService } from '../prisma/prisma.service';
 import {
   computeSlots,
+  parseBreaks,
   structuralStarts,
   type EngineInput,
   type ProfessionalAgenda,
@@ -102,8 +103,7 @@ export class AvailabilityService {
           ? {
               opensAt: hours.opensAt,
               closesAt: hours.closesAt,
-              breakStart: hours.breakStart,
-              breakEnd: hours.breakEnd,
+              breaks: parseBreaks(hours.breaks),
             }
           : null,
         durationMinutes: service.durationMinutes,

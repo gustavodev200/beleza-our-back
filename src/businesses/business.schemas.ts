@@ -44,8 +44,10 @@ const daySchema = z
     weekday: z.number().int().min(0).max(6),
     opensAt: time,
     closesAt: time,
-    breakStart: time.optional(),
-    breakEnd: time.optional(),
+    breaks: z
+      .array(z.object({ start: time, end: time }).strict())
+      .max(10, 'Máximo de 10 pausas por dia')
+      .default([]),
   })
   .strict()
   .superRefine((d, ctx) => {
@@ -53,15 +55,13 @@ const daySchema = z
     const close = toMinutes(d.closesAt);
     if (open >= close)
       ctx.addIssue({ code: 'custom', message: 'Abertura deve ser antes do fechamento' });
-    if (Boolean(d.breakStart) !== Boolean(d.breakEnd)) {
-      ctx.addIssue({ code: 'custom', message: 'Informe início e fim da pausa' });
-    }
-    if (d.breakStart && d.breakEnd) {
-      const bs = toMinutes(d.breakStart);
-      const be = toMinutes(d.breakEnd);
-      if (!(open <= bs && bs < be && be <= close)) {
-        ctx.addIssue({ code: 'custom', message: 'Pausa deve estar dentro do expediente' });
-      }
+    const breaks = d.breaks
+      .map((b) => ({ start: toMinutes(b.start), end: toMinutes(b.end) }))
+      .sort((a, b) => a.start - b.start);
+    if (breaks.some((b) => !(open <= b.start && b.start < b.end && b.end <= close))) {
+      ctx.addIssue({ code: 'custom', message: 'Pausa deve estar dentro do expediente' });
+    } else if (breaks.some((b, i) => i > 0 && b.start < breaks[i - 1].end)) {
+      ctx.addIssue({ code: 'custom', message: 'Pausas não podem se sobrepor' });
     }
   });
 

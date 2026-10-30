@@ -6,7 +6,7 @@ const hhmm = (d: Date) => new Date(d.getTime() - 3 * 3_600_000).toISOString().sl
 
 const base: EngineInput = {
   date: DATE,
-  schedule: { opensAt: 9 * 60, closesAt: 18 * 60, breakStart: 12 * 60, breakEnd: 13 * 60 },
+  schedule: { opensAt: 9 * 60, closesAt: 18 * 60, breaks: [{ start: 12 * 60, end: 13 * 60 }] },
   durationMinutes: 60,
   professionals: [{ id: 'ana', busy: [] }],
   now: new Date('2026-11-01T12:00:00.000Z'),
@@ -27,6 +27,28 @@ describe('computeSlots', () => {
     expect(starts).not.toContain('12:00');
     expect(starts).not.toContain('12:45');
     expect(starts).toContain('13:00');
+  });
+
+  it('respeita várias pausas no mesmo dia', () => {
+    const schedule = {
+      ...base.schedule!,
+      breaks: [
+        { start: 10 * 60, end: 10 * 60 + 30 },
+        { start: 12 * 60, end: 13 * 60 },
+        { start: 15 * 60, end: 15 * 60 + 15 },
+      ],
+    };
+    const starts = computeSlots({ ...base, schedule, durationMinutes: 30 }).map((s) =>
+      hhmm(s.startsAt),
+    );
+    expect(starts).toContain('09:30');
+    expect(starts).not.toContain('09:45'); // terminaria 10:15
+    expect(starts).not.toContain('10:15');
+    expect(starts).toContain('10:30');
+    expect(starts).not.toContain('12:30');
+    expect(starts).not.toContain('14:45');
+    expect(starts).not.toContain('15:00');
+    expect(starts).toContain('15:15');
   });
 
   it('dia fechado não tem horários', () => {

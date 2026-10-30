@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Business, Prisma } from '@prisma/client';
+import { parseBreaks } from '../availability/availability.engine';
 import { Errors } from '../common/errors';
 import { normalizeText, slugify } from '../common/utils/text';
 
@@ -43,8 +44,7 @@ export const ownerBusinessInclude = {
   hours: { orderBy: { weekday: 'asc' } },
 } satisfies Prisma.BusinessInclude;
 
-function minutesToHHMM(value: number | null): string | null {
-  if (value === null) return null;
+function minutesToHHMM(value: number): string {
   return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 }
 
@@ -79,8 +79,10 @@ export function toOwnerView(b: BusinessWithRelations) {
       weekday: h.weekday,
       opensAt: minutesToHHMM(h.opensAt),
       closesAt: minutesToHHMM(h.closesAt),
-      breakStart: minutesToHHMM(h.breakStart),
-      breakEnd: minutesToHHMM(h.breakEnd),
+      breaks: parseBreaks(h.breaks).map((b) => ({
+        start: minutesToHHMM(b.start),
+        end: minutesToHHMM(b.end),
+      })),
     })),
   };
 }
@@ -146,8 +148,9 @@ export class BusinessesService {
           weekday: d.weekday,
           opensAt: toMinutes(d.opensAt),
           closesAt: toMinutes(d.closesAt),
-          breakStart: d.breakStart ? toMinutes(d.breakStart) : null,
-          breakEnd: d.breakEnd ? toMinutes(d.breakEnd) : null,
+          breaks: d.breaks
+            .map((b) => ({ start: toMinutes(b.start), end: toMinutes(b.end) }))
+            .sort((a, b) => a.start - b.start),
         })),
       }),
     ]);

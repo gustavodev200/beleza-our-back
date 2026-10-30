@@ -316,8 +316,7 @@ model BusinessHours {
   weekday    Int // 0 = domingo ... 6 = sábado
   opensAt    Int    @map("opens_at") // minutos desde 00:00
   closesAt   Int    @map("closes_at")
-  breakStart Int?   @map("break_start")
-  breakEnd   Int?   @map("break_end")
+  breaks     Json   @default("[]") // [{ start, end }] em minutos, ordenadas e sem sobreposição
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 

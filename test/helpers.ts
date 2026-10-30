@@ -320,8 +320,7 @@ export const WEEK_HOURS = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   weekday,
   opensAt: '09:00',
   closesAt: '18:00',
-  breakStart: '12:00',
-  breakEnd: '13:00',
+  breaks: [{ start: '12:00', end: '13:00' }],
 }));
 
 /**
